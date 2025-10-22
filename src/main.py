@@ -15,7 +15,7 @@ from export_service import start_export_service
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 TARGETS_FILEPATH = os.getenv("TARGETS_FILEPATH")
-INTERVAL = 0.5
+INTERVAL = 1
 MAX_POINTS = 100000
 TIMEOUT_MS = 2000
 

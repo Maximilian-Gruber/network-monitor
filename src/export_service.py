@@ -7,21 +7,25 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine, text
+import threading
 
-EXPORT_INTERVAL_HOURS = int(os.getenv("EXPORT_INTERVAL_HOURS"))
+# --- CONFIG ---
+EXPORT_INTERVAL_HOURS = int(os.getenv("EXPORT_INTERVAL_HOURS", 12))
 EXPORT_DIR = os.getenv("EXPORT_DIR", "./exports")
 DATABASE_URL = os.getenv("DATABASE_URL")
 EMAIL_TO = [email.strip() for email in os.getenv("EMAIL_TO", "").split(",") if email.strip()]
 EMAIL_FROM = os.getenv("EMAIL_FROM")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 SMTP_SERVER = os.getenv("SMTP_SERVER")
-SMTP_PORT = int(os.getenv("SMTP_PORT"))
+SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 
 os.makedirs(EXPORT_DIR, exist_ok=True)
-
 engine = create_engine(DATABASE_URL)
 
 def export_and_send():
+    print(f"[SERVICE] Waiting {EXPORT_INTERVAL_HOURS} hours before first export...")
+    time.sleep(30)
+
     while True:
         try:
             now = datetime.now(timezone(timedelta(hours=2)))
@@ -97,13 +101,13 @@ def export_and_send():
         print(f"[SERVICE] Next run in {EXPORT_INTERVAL_HOURS} hours...")
         time.sleep(EXPORT_INTERVAL_HOURS * 3600)
 
-
 def send_email(csv_path, stats_df):
     try:
         msg = MIMEMultipart()
         msg["From"] = EMAIL_FROM
         msg["To"] = ", ".join(EMAIL_TO)
-        msg["Subject"] = f"Network Report {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        now = datetime.now(timezone(timedelta(hours=2)))
+        msg["Subject"] = f"Network Report - {now.strftime('%Y%m%d_%H%M')}"
 
         body = "Automatically generated network report:\n\n"
         body += stats_df.to_string(index=False)
@@ -125,9 +129,7 @@ def send_email(csv_path, stats_df):
     except Exception as e:
         print(f"[MAIL ERROR] {e}")
 
-
 def start_export_service():
-    import threading
     thread = threading.Thread(target=export_and_send, daemon=True)
     thread.start()
     print("[SERVICE] Export & Email service started.")
