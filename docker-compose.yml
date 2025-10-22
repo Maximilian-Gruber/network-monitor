@@ -7,6 +7,7 @@ services:
       - "8050:8050"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - TARGETS_FILEPATH=${TARGETS_FILEPATH}
     depends_on:
       db:
         condition:

@@ -12,6 +12,10 @@ import plotly.graph_objs as go
 from sqlalchemy import create_engine
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+TARGETS_FILEPATH = os.getenv("TARGETS_FILEPATH")
+INTERVAL = 0.5
+MAX_POINTS = 100000
+TIMEOUT_MS = 2000
 
 engine = create_engine(DATABASE_URL)
 conn = engine.connect()
@@ -27,11 +31,9 @@ with engine.connect() as conn:
     """))
     conn.commit()
 
-TARGETS = ["8.8.8.8", "1.1.1.1", "192.168.33.1"]
-INTERVAL = 0.5
-MAX_POINTS = 100000
-TIMEOUT_MS = 2000
-
+if os.path.exists(TARGETS_FILEPATH):
+    with open(TARGETS_FILEPATH, "r") as f:
+        TARGETS = [line.strip() for line in f if line.strip()]
 
 def ping_once(target: str, port=53, timeout=1):
     try:
