@@ -24,9 +24,9 @@ engine = create_engine(DATABASE_URL)
 
 def export_and_send():
     print(f"[SERVICE] Waiting {EXPORT_INTERVAL_HOURS} hours before first export...")
-    time.sleep(EXPORT_INTERVAL_HOURS * 3600)
 
     while True:
+        time.sleep(EXPORT_INTERVAL_HOURS * 3600)
         try:
             now = datetime.now(timezone(timedelta(hours=2)))
             since = now - timedelta(hours=EXPORT_INTERVAL_HOURS)
@@ -99,7 +99,6 @@ def export_and_send():
             print(f"[ERROR] ExportService: {e}")
 
         print(f"[SERVICE] Next run in {EXPORT_INTERVAL_HOURS} hours...")
-        time.sleep(EXPORT_INTERVAL_HOURS * 3600)
 
 def send_email(csv_path, stats_df):
     try:
