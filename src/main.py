@@ -11,6 +11,8 @@ from dash.dependencies import Output, Input
 import plotly.graph_objs as go
 from sqlalchemy import create_engine
 
+from export_service import start_export_service
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 TARGETS_FILEPATH = os.getenv("TARGETS_FILEPATH")
 INTERVAL = 0.5
@@ -126,4 +128,5 @@ for target in TARGETS:
     app.callback(Output(graph_ids[target], "figure"), Input("update-interval", "n_intervals"))(make_callback(target))
 
 if __name__ == "__main__":
+    start_export_service()
     app.run(host="0.0.0.0", port=8050, debug=False)
