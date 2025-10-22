@@ -36,7 +36,8 @@ def export_and_send():
                 )
 
                 if not df.empty:
-                    df.to_csv(csv_path, index=False)
+                    df['latency'] = pd.to_numeric(df['latency'], errors='coerce')
+                    df.to_csv(csv_path, index=False, float_format="%.3f")
                     print(f"[EXPORT] CSV saved: {csv_path}")
                 else:
                     print("[EXPORT] No new pings in the time period.")

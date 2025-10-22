@@ -1,6 +1,6 @@
 # Network Monitor
 
-**Network Monitor** is a lightweight, containerized network monitoring tool for visualizing latency fluctuations in real-time. It is particularly useful for diagnosing connectivity issues after network upgrades such as fiber optic installations.
+**Network Monitor** is a lightweight, containerized network monitoring tool for visualizing latency fluctuations in real-time. It is particularly useful for diagnosing connectivity issues after network upgrades such as fiber optic installations ;-)
 
 The application continuously pings configured targets and stores results in a PostgreSQL database. A web interface provides interactive graphs and automatic reports, making it easy to track network stability and historical performance.
 
