@@ -24,7 +24,7 @@ engine = create_engine(DATABASE_URL)
 
 def export_and_send():
     print(f"[SERVICE] Waiting {EXPORT_INTERVAL_HOURS} hours before first export...")
-    time.sleep(30)
+    time.sleep(EXPORT_INTERVAL_HOURS * 3600)
 
     while True:
         try:
