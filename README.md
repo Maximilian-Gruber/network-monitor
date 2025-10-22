@@ -37,10 +37,10 @@ POSTGRES_PASSWORD=<your_db_password>
 POSTGRES_DB=<your_db_name>
 
 # Target hosts
-TARGETS_FILEPATH=src/targets.txt
+TARGETS_FILEPATH=targets.txt
 
 # Email reporting
-EMAIL_TO="recipient1@example.com,recipient2@example.com"
+EMAIL_TO=recipient1@example.com,recipient2@example.com
 EMAIL_FROM=<your_email>
 EMAIL_PASS=<your_email_app_password>
 SMTP_SERVER=<smtp_server>
@@ -48,6 +48,9 @@ SMTP_PORT=<smtp_port>
 
 # Automatic export interval (in hours)
 EXPORT_INTERVAL_HOURS=12
+
+# Directory for CSV exports
+EXPORT_DIR=./exports
 ```
 ## Target Configuration
 Targets are configured in the `src/targets.txt` file. Each target (IP or hostname) should be on a seperate line.

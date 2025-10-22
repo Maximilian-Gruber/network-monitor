@@ -8,10 +8,10 @@ from email.mime.application import MIMEApplication
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine, text
 
-EXPORT_INTERVAL_HOURS = os.getenv("EXPORT_INTERVAL_HOURS")
+EXPORT_INTERVAL_HOURS = int(os.getenv("EXPORT_INTERVAL_HOURS"))
 EXPORT_DIR = os.getenv("EXPORT_DIR", "./exports")
 DATABASE_URL = os.getenv("DATABASE_URL")
-EMAIL_TO = os.getenv("EMAIL_TO")
+EMAIL_TO = [email.strip() for email in os.getenv("EMAIL_TO", "").split(",") if email.strip()]
 EMAIL_FROM = os.getenv("EMAIL_FROM")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 SMTP_SERVER = os.getenv("SMTP_SERVER")
@@ -117,8 +117,9 @@ def send_email(csv_path, stats_df):
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(EMAIL_FROM, EMAIL_PASS)
-            server.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
-            print(f"[MAIL] Report sent to {EMAIL_TO}.")
+            for recipient in EMAIL_TO:
+                server.sendmail(EMAIL_FROM, recipient, msg.as_string())
+                print(f"[MAIL] Report sent to {recipient}.")
 
     except Exception as e:
         print(f"[MAIL ERROR] {e}")
