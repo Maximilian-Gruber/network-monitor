@@ -71,7 +71,7 @@ Build and start the containers using Docker Compose:
 docker-compose up --build
 ```
 * Dashboard is available at: ```http://localhost:8050```
-* Adminer (PostgreSQL web client) is available at: ```http://localhost:8080````
+* Adminer (PostgreSQL web client) is available at: ```http://localhost:8080```
 
 ## Dashboard Features
 * Live latency graphs for all configured targets.
