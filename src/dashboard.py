@@ -4,7 +4,7 @@ from dash.dependencies import Input, Output
 from sqlalchemy import create_engine, text
 import plotly.graph_objs as go
 from flask import Flask
-from datetime import datetime
+from datetime import datetime, timezone
 import pytz
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -63,11 +63,27 @@ def monitored_dash_loop():
                         LIMIT :limit
                     """), {"t": target, "limit": MAX_POINTS}
                 ).fetchall()
+
             rows.reverse()
             if not rows:
                 return go.Figure(layout_title_text=f"No data for {target}")
-            x = [r[0].astimezone(LOCAL_TZ) for r in rows]
+
+            # ✅ Konvertiere Strings zu UTC-Datetimes, dann nach Wien
+            x = []
+            for r in rows:
+                ts = r[0]
+                if isinstance(ts, str):
+                    try:
+                        ts = datetime.fromisoformat(ts)
+                    except ValueError:
+                        ts = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S.%f")
+                    ts = ts.replace(tzinfo=timezone.utc)
+                elif ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                x.append(ts.astimezone(LOCAL_TZ))
+
             y = [r[1] for r in rows]
+
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=x, y=y, mode="lines+markers", name="Ping",
                                      line=dict(color="blue")))
@@ -85,6 +101,7 @@ def monitored_dash_loop():
     app.run(host="0.0.0.0", port=8050, debug=False)
 
 flask_app = Flask(__name__)
+
 @flask_app.route("/health")
 def health():
     return "OK", 200
