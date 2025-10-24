@@ -21,6 +21,11 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 logging.basicConfig(level=logging.INFO, format='[EXPORT] %(asctime)s %(message)s')
 LOCAL_TZ = pytz.timezone("Europe/Vienna")
 
+UTC = pytz.UTC
+
+def now_utc():
+    return datetime.now(UTC)
+
 def now():
     return datetime.now(LOCAL_TZ)
 
@@ -60,17 +65,20 @@ def monitored_export():
     logging.info(f"Export service started. Interval: {EXPORT_INTERVAL_HOURS}h")
     while True:
         try:
-            last_export = get_last_export_time()
-            now_ts = now()
             time.sleep(EXPORT_INTERVAL_HOURS * 3600)
-
+            
+            last_export = get_last_export_time()
+            now_ts_utc = now_utc()
+            
             df = pd.read_sql_query(
                 text("SELECT * FROM pings WHERE timestamp > :since"),
                 engine.connect(),
                 params={"since": last_export.strftime("%Y-%m-%d %H:%M:%S")}
             )
+
             if not df.empty:
-                csv_path = f"{EXPORT_DIR}/pings_{now_ts.strftime('%Y%m%d_%H%M')}.csv"
+                now_ts_vienna = now_ts_utc.astimezone(LOCAL_TZ)
+                csv_path = f"{EXPORT_DIR}/pings_{now_ts_vienna.strftime('%Y%m%d_%H%M')}.csv"
                 df.to_csv(csv_path, index=False, float_format="%.3f")
                 logging.info(f"CSV exported: {csv_path}")
 
@@ -88,7 +96,7 @@ def monitored_export():
                             VALUES (:target, :timestamp, :total_pings, :timeouts, :avg_latency, :max_latency)
                         """), {
                             "target": row["target"],
-                            "timestamp": now_ts.strftime("%Y-%m-%d %H:%M:%S"),
+                            "timestamp": now_ts_utc.strftime("%Y-%m-%d %H:%M:%S"),
                             "total_pings": int(row["total_pings"]),
                             "timeouts": int(row["timeouts"]),
                             "avg_latency": float(row["avg_latency"]) if not pd.isna(row["avg_latency"]) else None,
@@ -96,11 +104,13 @@ def monitored_export():
                         })
 
                 send_email(csv_path, stats)
-            update_last_export_time(now_ts)
+
+            update_last_export_time(now_ts_utc)
 
         except Exception as e:
             logging.error(f"Export service error: {e}")
             time.sleep(60)
+
 
 def send_email(csv_path, stats_df):
     if not EMAIL_TO or not EMAIL_FROM or not EMAIL_PASS:
