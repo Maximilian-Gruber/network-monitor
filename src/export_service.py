@@ -2,9 +2,10 @@ import os, time, pandas as pd, smtplib, threading, logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
-from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine, text
 from flask import Flask
+from datetime import datetime
+import pytz
 
 EXPORT_INTERVAL_HOURS = int(os.getenv("EXPORT_INTERVAL_HOURS", 12))
 EXPORT_DIR = os.getenv("EXPORT_DIR", "./exports")
@@ -18,6 +19,10 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 os.makedirs(EXPORT_DIR, exist_ok=True)
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 logging.basicConfig(level=logging.INFO, format='[EXPORT] %(asctime)s %(message)s')
+LOCAL_TZ = pytz.timezone("Europe/Vienna")
+
+def now():
+    return datetime.now(LOCAL_TZ)
 
 def init_db():
     with engine.begin() as conn:
@@ -40,46 +45,42 @@ def init_db():
         """))
         last = conn.execute(text("SELECT last_export FROM export_checkpoint ORDER BY id DESC LIMIT 1")).fetchone()
         if last is None:
-            conn.execute(text("INSERT INTO export_checkpoint (last_export) VALUES (:ts)"), {"ts": datetime.now(timezone.utc)})
+            conn.execute(text("INSERT INTO export_checkpoint (last_export) VALUES (:ts)"), {"ts": now()})
 
 def get_last_export_time():
     with engine.connect() as conn:
         result = conn.execute(text("SELECT last_export FROM export_checkpoint ORDER BY id DESC LIMIT 1")).fetchone()
-        return result[0] if result else datetime.now(timezone.utc)
+        return result[0] if result else now()
 
 def update_last_export_time(ts):
     with engine.begin() as conn:
         conn.execute(text("INSERT INTO export_checkpoint (last_export) VALUES (:ts)"), {"ts": ts})
 
-def export_and_send():
-    logging.info(f"Service started. Export every {EXPORT_INTERVAL_HOURS} hours.")
+def monitored_export():
+    logging.info(f"Export service started. Interval: {EXPORT_INTERVAL_HOURS}h")
     while True:
-        time.sleep(EXPORT_INTERVAL_HOURS * 3600)
         try:
             last_export = get_last_export_time()
-            now = datetime.now(timezone.utc)
-            csv_path = f"{EXPORT_DIR}/pings_{now.strftime('%Y%m%d_%H%M')}.csv"
+            now_ts = now()
+            time.sleep(EXPORT_INTERVAL_HOURS * 3600)
 
-            with engine.connect() as conn:
-                df = pd.read_sql_query(
-                    text("SELECT * FROM pings WHERE timestamp > :since"),
-                    conn,
-                    params={"since": last_export.strftime("%Y-%m-%d %H:%M:%S")},
-                )
-
+            df = pd.read_sql_query(
+                text("SELECT * FROM pings WHERE timestamp > :since"),
+                engine.connect(),
+                params={"since": last_export.strftime("%Y-%m-%d %H:%M:%S")}
+            )
             if not df.empty:
-                df['latency'] = pd.to_numeric(df['latency'], errors='coerce')
+                csv_path = f"{EXPORT_DIR}/pings_{now_ts.strftime('%Y%m%d_%H%M')}.csv"
                 df.to_csv(csv_path, index=False, float_format="%.3f")
                 logging.info(f"CSV exported: {csv_path}")
 
-            stats = df.groupby("target").agg(
-                total_pings=pd.NamedAgg(column="latency", aggfunc="count"),
-                timeouts=pd.NamedAgg(column="latency", aggfunc=lambda x: x.isna().sum()),
-                avg_latency=pd.NamedAgg(column="latency", aggfunc="mean"),
-                max_latency=pd.NamedAgg(column="latency", aggfunc="max")
-            ).reset_index()
+                stats = df.groupby("target").agg(
+                    total_pings=pd.NamedAgg(column="latency", aggfunc="count"),
+                    timeouts=pd.NamedAgg(column="latency", aggfunc=lambda x: x.isna().sum()),
+                    avg_latency=pd.NamedAgg(column="latency", aggfunc="mean"),
+                    max_latency=pd.NamedAgg(column="latency", aggfunc="max")
+                ).reset_index()
 
-            if not stats.empty:
                 with engine.begin() as conn:
                     for _, row in stats.iterrows():
                         conn.execute(text("""
@@ -87,7 +88,7 @@ def export_and_send():
                             VALUES (:target, :timestamp, :total_pings, :timeouts, :avg_latency, :max_latency)
                         """), {
                             "target": row["target"],
-                            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+                            "timestamp": now_ts.strftime("%Y-%m-%d %H:%M:%S"),
                             "total_pings": int(row["total_pings"]),
                             "timeouts": int(row["timeouts"]),
                             "avg_latency": float(row["avg_latency"]) if not pd.isna(row["avg_latency"]) else None,
@@ -95,10 +96,10 @@ def export_and_send():
                         })
 
                 send_email(csv_path, stats)
-            update_last_export_time(now)
+            update_last_export_time(now_ts)
 
         except Exception as e:
-            logging.error(f"Export failed: {e}")
+            logging.error(f"Export service error: {e}")
             time.sleep(60)
 
 def send_email(csv_path, stats_df):
@@ -109,8 +110,8 @@ def send_email(csv_path, stats_df):
         msg = MIMEMultipart()
         msg["From"] = EMAIL_FROM
         msg["To"] = ", ".join(EMAIL_TO)
-        now = datetime.now(timezone.utc)
-        msg["Subject"] = f"Network Report - {now.strftime('%Y%m%d_%H%M')}"
+        now_ts = now()
+        msg["Subject"] = f"Network Report - {now_ts.strftime('%Y%m%d_%H%M')}"
 
         body = "Automatically generated network report:\n\n"
         body += stats_df.to_string(index=False)
@@ -142,7 +143,7 @@ def run_health():
 if __name__ == "__main__":
     init_db()
     threading.Thread(target=run_health, daemon=True).start()
-    threading.Thread(target=export_and_send, daemon=True).start()
+    threading.Thread(target=monitored_export, daemon=True).start()
     while True:
         time.sleep(60)
-        logging.info("Heartbeat: export service running.")
+        logging.info("Heartbeat: export service running")
