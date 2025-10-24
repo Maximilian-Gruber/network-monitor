@@ -1,15 +1,11 @@
-import os
-import time
-import pandas as pd
-import smtplib
+import os, time, pandas as pd, smtplib, threading, logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine, text
-import threading
+from flask import Flask
 
-# --- CONFIG ---
 EXPORT_INTERVAL_HOURS = int(os.getenv("EXPORT_INTERVAL_HOURS", 12))
 EXPORT_DIR = os.getenv("EXPORT_DIR", "./exports")
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -20,92 +16,100 @@ SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 
 os.makedirs(EXPORT_DIR, exist_ok=True)
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+logging.basicConfig(level=logging.INFO, format='[EXPORT] %(asctime)s %(message)s')
+
+def init_db():
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS ping_stats (
+                id SERIAL PRIMARY KEY,
+                target TEXT,
+                timestamp TEXT,
+                total_pings INTEGER,
+                timeouts INTEGER,
+                avg_latency DOUBLE PRECISION,
+                max_latency DOUBLE PRECISION
+            );
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS export_checkpoint (
+                id SERIAL PRIMARY KEY,
+                last_export TIMESTAMP
+            );
+        """))
+        last = conn.execute(text("SELECT last_export FROM export_checkpoint ORDER BY id DESC LIMIT 1")).fetchone()
+        if last is None:
+            conn.execute(text("INSERT INTO export_checkpoint (last_export) VALUES (:ts)"), {"ts": datetime.now(timezone.utc)})
+
+def get_last_export_time():
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT last_export FROM export_checkpoint ORDER BY id DESC LIMIT 1")).fetchone()
+        return result[0] if result else datetime.now(timezone.utc)
+
+def update_last_export_time(ts):
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO export_checkpoint (last_export) VALUES (:ts)"), {"ts": ts})
 
 def export_and_send():
-    print(f"[SERVICE] Waiting {EXPORT_INTERVAL_HOURS} hours before first export...")
-
+    logging.info(f"Service started. Export every {EXPORT_INTERVAL_HOURS} hours.")
     while True:
         time.sleep(EXPORT_INTERVAL_HOURS * 3600)
         try:
-            now = datetime.now(timezone(timedelta(hours=2)))
-            since = now - timedelta(hours=EXPORT_INTERVAL_HOURS)
+            last_export = get_last_export_time()
+            now = datetime.now(timezone.utc)
             csv_path = f"{EXPORT_DIR}/pings_{now.strftime('%Y%m%d_%H%M')}.csv"
 
             with engine.connect() as conn:
                 df = pd.read_sql_query(
-                    text("SELECT * FROM pings WHERE timestamp >= :since"),
+                    text("SELECT * FROM pings WHERE timestamp > :since"),
                     conn,
-                    params={"since": since.strftime("%Y-%m-%d %H:%M:%S")},
+                    params={"since": last_export.strftime("%Y-%m-%d %H:%M:%S")},
                 )
 
-                if not df.empty:
-                    df['latency'] = pd.to_numeric(df['latency'], errors='coerce')
-                    df.to_csv(csv_path, index=False, float_format="%.3f")
-                    print(f"[EXPORT] CSV saved: {csv_path}")
-                else:
-                    print("[EXPORT] No new pings in the time period.")
+            if not df.empty:
+                df['latency'] = pd.to_numeric(df['latency'], errors='coerce')
+                df.to_csv(csv_path, index=False, float_format="%.3f")
+                logging.info(f"CSV exported: {csv_path}")
 
-                stats = pd.read_sql_query(
-                    text("""
-                        SELECT 
-                            target,
-                            COUNT(*) AS total_pings,
-                            SUM(CASE WHEN latency IS NULL THEN 1 ELSE 0 END) AS timeouts,
-                            ROUND(AVG(latency)::numeric, 2) AS avg_latency,
-                            ROUND(MAX(latency)::numeric, 2) AS max_latency
-                        FROM pings
-                        WHERE timestamp >= :since
-                        GROUP BY target
-                    """),
-                    conn,
-                    params={"since": since.strftime("%Y-%m-%d %H:%M:%S")},
-                )
+            stats = df.groupby("target").agg(
+                total_pings=pd.NamedAgg(column="latency", aggfunc="count"),
+                timeouts=pd.NamedAgg(column="latency", aggfunc=lambda x: x.isna().sum()),
+                avg_latency=pd.NamedAgg(column="latency", aggfunc="mean"),
+                max_latency=pd.NamedAgg(column="latency", aggfunc="max")
+            ).reset_index()
 
-                if not stats.empty:
-                    conn.execute(text("""
-                        CREATE TABLE IF NOT EXISTS ping_stats (
-                            id SERIAL PRIMARY KEY,
-                            target TEXT,
-                            timestamp TEXT,
-                            total_pings INTEGER,
-                            timeouts INTEGER,
-                            avg_latency DOUBLE PRECISION,
-                            max_latency DOUBLE PRECISION
-                        )
-                    """))
-
+            if not stats.empty:
+                with engine.begin() as conn:
                     for _, row in stats.iterrows():
-                        conn.execute(
-                            text("""
-                                INSERT INTO ping_stats (target, timestamp, total_pings, timeouts, avg_latency, max_latency)
-                                VALUES (:target, :timestamp, :total_pings, :timeouts, :avg_latency, :max_latency)
-                            """),
-                            {
-                                "target": row["target"],
-                                "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
-                                "total_pings": int(row["total_pings"]),
-                                "timeouts": int(row["timeouts"]),
-                                "avg_latency": float(row["avg_latency"]) if row["avg_latency"] else None,
-                                "max_latency": float(row["max_latency"]) if row["max_latency"] else None,
-                            },
-                        )
-                    conn.commit()
-                    print(f"[STATS] Statistics saved ({len(stats)} targets)")
+                        conn.execute(text("""
+                            INSERT INTO ping_stats (target, timestamp, total_pings, timeouts, avg_latency, max_latency)
+                            VALUES (:target, :timestamp, :total_pings, :timeouts, :avg_latency, :max_latency)
+                        """), {
+                            "target": row["target"],
+                            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+                            "total_pings": int(row["total_pings"]),
+                            "timeouts": int(row["timeouts"]),
+                            "avg_latency": float(row["avg_latency"]) if not pd.isna(row["avg_latency"]) else None,
+                            "max_latency": float(row["max_latency"]) if not pd.isna(row["max_latency"]) else None
+                        })
 
-                    send_email(csv_path, stats)
+                send_email(csv_path, stats)
+            update_last_export_time(now)
 
         except Exception as e:
-            print(f"[ERROR] ExportService: {e}")
-
-        print(f"[SERVICE] Next run in {EXPORT_INTERVAL_HOURS} hours...")
+            logging.error(f"Export failed: {e}")
+            time.sleep(60)
 
 def send_email(csv_path, stats_df):
+    if not EMAIL_TO or not EMAIL_FROM or not EMAIL_PASS:
+        logging.warning("Email not configured, skipping send.")
+        return
     try:
         msg = MIMEMultipart()
         msg["From"] = EMAIL_FROM
         msg["To"] = ", ".join(EMAIL_TO)
-        now = datetime.now(timezone(timedelta(hours=2)))
+        now = datetime.now(timezone.utc)
         msg["Subject"] = f"Network Report - {now.strftime('%Y%m%d_%H%M')}"
 
         body = "Automatically generated network report:\n\n"
@@ -123,12 +127,22 @@ def send_email(csv_path, stats_df):
             server.login(EMAIL_FROM, EMAIL_PASS)
             for recipient in EMAIL_TO:
                 server.sendmail(EMAIL_FROM, recipient, msg.as_string())
-                print(f"[MAIL] Report sent to {recipient}.")
-
+                logging.info(f"Mail sent to {recipient}.")
     except Exception as e:
-        print(f"[MAIL ERROR] {e}")
+        logging.error(f"Mail send failed: {e}")
 
-def start_export_service():
-    thread = threading.Thread(target=export_and_send, daemon=True)
-    thread.start()
-    print("[SERVICE] Export & Email service started.")
+app = Flask(__name__)
+@app.route("/health")
+def health():
+    return "OK", 200
+
+def run_health():
+    app.run(host="0.0.0.0", port=5050)
+
+if __name__ == "__main__":
+    init_db()
+    threading.Thread(target=run_health, daemon=True).start()
+    threading.Thread(target=export_and_send, daemon=True).start()
+    while True:
+        time.sleep(60)
+        logging.info("Heartbeat: export service running.")

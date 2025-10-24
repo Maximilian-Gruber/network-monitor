@@ -1,13 +1,63 @@
 version: "3.9"
 
 services:
-  network-monitor:
-    build: src/
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+  ping-service:
+    build: ./src
+    command: ["python", "ping_service.py"]
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - TARGETS_FILEPATH=${TARGETS_FILEPATH}
+      - PING_INTERVAL=${PING_INTERVAL}
+      - PING_TIMEOUT=${PING_TIMEOUT}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  dashboard:
+    build: ./src
+    command: ["python", "dashboard.py"]
     ports:
       - "8050:8050"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      - TARGETS_FILEPATH=${TARGETS_FILEPATH}
+      - DASH_REFRESH_MS=${DASH_REFRESH_MS}
+      - MAX_POINTS=${MAX_POINTS}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8050/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  export-service:
+    build: ./src
+    command: ["python", "export_service.py"]
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - EMAIL_TO=${EMAIL_TO}
       - EMAIL_FROM=${EMAIL_FROM}
       - EMAIL_PASS=${EMAIL_PASS}
@@ -15,37 +65,31 @@ services:
       - SMTP_PORT=${SMTP_PORT}
       - EXPORT_INTERVAL_HOURS=${EXPORT_INTERVAL_HOURS}
       - EXPORT_DIR=${EXPORT_DIR}
+    volumes:
+      - ./exports:${EXPORT_DIR}
     depends_on:
       db:
-        condition:
-          service_healthy
-    restart: unless-stopped
-
-  db:
-    image: postgres:16
-    container_name: postgres
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+        condition: service_healthy
+    restart: always
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 2s
-      timeout: 3s
-      retries: 10
+      test: ["CMD-SHELL", "curl -f http://localhost:5050/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   adminer:
     image: adminer
-    restart: unless-stopped
     ports:
       - "8080:8080"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   postgres_data:
