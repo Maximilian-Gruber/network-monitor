@@ -2,7 +2,7 @@
 set -e
 
 echo "=============================="
-echo " Network Monitor Setup (Mac)"
+echo " Network Monitor Setup"
 echo "=============================="
 
 docker compose run --rm -it setup
