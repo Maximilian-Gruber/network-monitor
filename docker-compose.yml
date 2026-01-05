@@ -1,6 +1,16 @@
 version: "3.9"
 
 services:
+
+  setup:
+    build:
+      context: .
+      dockerfile: setup.Dockerfile
+    volumes:
+      - .:/setup
+    stdin_open: true
+    tty: true
+
   db:
     image: postgres:16
     environment:
@@ -19,9 +29,11 @@ services:
   ping-service:
     build: ./src
     command: ["python", "ping_service.py"]
+    volumes:
+      - ./targets.txt:/app/targets.txt:ro
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      - TARGETS_FILEPATH=${TARGETS_FILEPATH}
+      - TARGETS_FILEPATH=/app/targets.txt
       - PING_INTERVAL=${PING_INTERVAL}
       - PING_TIMEOUT=${PING_TIMEOUT}
     depends_on:
@@ -56,17 +68,17 @@ services:
   export-service:
     build: ./src
     command: ["python", "export_service.py"]
+    volumes:
+      - ./emails.txt:/app/emails.txt:ro
+      - ./exports:${EXPORT_DIR}
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      - EMAIL_TO=${EMAIL_TO}
       - EMAIL_FROM=${EMAIL_FROM}
       - EMAIL_PASS=${EMAIL_PASS}
       - SMTP_SERVER=${SMTP_SERVER}
       - SMTP_PORT=${SMTP_PORT}
       - EXPORT_INTERVAL_HOURS=${EXPORT_INTERVAL_HOURS}
       - EXPORT_DIR=${EXPORT_DIR}
-    volumes:
-      - ./exports:${EXPORT_DIR}
     depends_on:
       db:
         condition: service_healthy

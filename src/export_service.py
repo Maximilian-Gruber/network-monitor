@@ -10,11 +10,18 @@ import pytz
 EXPORT_INTERVAL_HOURS = int(os.getenv("EXPORT_INTERVAL_HOURS", 12))
 EXPORT_DIR = os.getenv("EXPORT_DIR", "./exports")
 DATABASE_URL = os.getenv("DATABASE_URL")
-EMAIL_TO = [email.strip() for email in os.getenv("EMAIL_TO", "").split(",") if email.strip()]
 EMAIL_FROM = os.getenv("EMAIL_FROM")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
+
+def load_emails():
+    if os.path.exists("emails.txt"):
+        with open("emails.txt") as f:
+            return [l.strip() for l in f if l.strip()]
+    return []
+
+EMAIL_TO = load_emails()
 
 os.makedirs(EXPORT_DIR, exist_ok=True)
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
