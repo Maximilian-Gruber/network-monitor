@@ -123,16 +123,68 @@ def send_email(csv_path, stats_df):
     if not EMAIL_TO or not EMAIL_FROM or not EMAIL_PASS:
         logging.warning("Email not configured, skipping send.")
         return
+
     try:
-        msg = MIMEMultipart()
+        msg = MIMEMultipart("alternative")
         msg["From"] = EMAIL_FROM
         msg["To"] = ", ".join(EMAIL_TO)
         now_ts = now()
-        msg["Subject"] = f"Network Report - {now_ts.strftime('%Y%m%d_%H%M')}"
+        msg["Subject"] = f"Network Report – {now_ts.strftime('%Y-%m-%d %H:%M')}"
 
-        body = "Automatically generated network report:\n\n"
-        body += stats_df.to_string(index=False)
-        msg.attach(MIMEText(body, "plain"))
+        text_body = (
+            "Network Monitor – Automatic Report\n"
+            f"Generated at: {now_ts.strftime('%Y-%m-%d %H:%M %Z')}\n\n"
+            "Summary per target:\n\n"
+            f"{stats_df.to_string(index=False)}\n\n"
+            "See attached CSV for full details."
+        )
+
+        html_rows = ""
+        for _, r in stats_df.iterrows():
+            html_rows += f"""
+            <tr>
+                <td>{r['target']}</td>
+                <td>{int(r['total_pings'])}</td>
+                <td>{int(r['timeouts'])}</td>
+                <td>{f"{r['avg_latency']:.2f}" if pd.notna(r['avg_latency']) else "–"}</td>
+                <td>{f"{r['max_latency']:.2f}" if pd.notna(r['max_latency']) else "–"}</td>
+            </tr>
+            """
+
+        html_body = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; background:#0f172a; color:#e5e7eb; padding:20px">
+            <h2 style="color:#38bdf8;">📡 Network Monitor – Report</h2>
+
+            <p>
+                <strong>Generated:</strong>
+                {now_ts.strftime('%Y-%m-%d %H:%M %Z')}
+            </p>
+
+            <table style="border-collapse:collapse; margin-top:15px; width:100%;">
+                <thead>
+                    <tr style="background:#1e293b;">
+                        <th style="padding:8px; border:1px solid #334155;">Target</th>
+                        <th style="padding:8px; border:1px solid #334155;">Pings</th>
+                        <th style="padding:8px; border:1px solid #334155;">Timeouts</th>
+                        <th style="padding:8px; border:1px solid #334155;">Avg (ms)</th>
+                        <th style="padding:8px; border:1px solid #334155;">Max (ms)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {html_rows}
+                </tbody>
+            </table>
+
+            <p style="margin-top:20px; font-size:13px; color:#94a3b8;">
+                📎 Full ping history is attached as CSV.
+            </p>
+        </body>
+        </html>
+        """
+
+        msg.attach(MIMEText(text_body, "plain"))
+        msg.attach(MIMEText(html_body, "html"))
 
         if os.path.exists(csv_path):
             with open(csv_path, "rb") as f:
@@ -143,11 +195,13 @@ def send_email(csv_path, stats_df):
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(EMAIL_FROM, EMAIL_PASS)
-            for recipient in EMAIL_TO:
-                server.sendmail(EMAIL_FROM, recipient, msg.as_string())
-                logging.info(f"Mail sent to {recipient}.")
+            server.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
+
+        logging.info(f"Mail sent to: {', '.join(EMAIL_TO)}")
+
     except Exception as e:
         logging.error(f"Mail send failed: {e}")
+
 
 app = Flask(__name__)
 @app.route("/health")
