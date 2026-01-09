@@ -1,8 +1,9 @@
 set -e
 
 echo "stopping network monitor services..."
+
 docker-compose down
 
-echo "=============================="
+echo "============================="
 echo "network monitor services stopped."
-echo "=============================="
+echo "============================="

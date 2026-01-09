@@ -1,90 +1,134 @@
 # Network Monitor
 
-**Network Monitor** is a lightweight, containerized network monitoring tool that visualizes latency fluctuations in real time. It is especially useful for diagnosing connectivity issues after network upgrades such as fiber optic installations. ;-)
+**Network Monitor** is a lightweight, containerized network monitoring tool that visualizes latency fluctuations in real time.  
+It is especially useful for diagnosing connectivity issues after network upgrades such as fiber optic installations 😉
 
-The application continuously pings configured targets and stores the results in a PostgreSQL database. A web dashboard provides interactive graphs, and automatic reports summarize network performance.
+The application continuously pings configured targets and stores the results in a PostgreSQL database.  
+A web dashboard provides interactive graphs and aggregated latency statistics.
 
 ---
 
 ## Features
 
-- **Real-time latency monitoring**: Continuous pinging of multiple targets.
-- **Historical storage**: All results (target, timestamp, latency) are stored in PostgreSQL.
-- **Interactive dashboard**: Live graphs with timeout markers and adjustable time windows.
-- **Automatic CSV exports**: Full ping history per target can be exported.
-- **Scheduled reports**: Summarized statistics (average, maximum, timeout count) and CSV are automatically emailed.
-- **Multiple recipients**: Reports can be sent to one or more email addresses.
-- **Containerized deployment**: Runs in Docker with minimal setup.
+- **Real-time latency monitoring**  
+  Continuous pinging of one or more targets
+
+- **Historical storage**  
+  All results (target, timestamp, latency) are stored in PostgreSQL
+
+- **Interactive dashboard**
+  - Latency distribution
+  - Packet loss
+  - Average latency
+  - Latency over time (high frequency configurable)
+
+- **Percentile-based metrics**  
+  Includes P95 latency for spotting spikes
+
+- **Configurable refresh rates**  
+  Dashboard update interval and time resolution are adjustable
+
+- **Automatic CSV exports & reports**  
+  Periodic exports with summary statistics
+
+- **Email reporting**  
+  Reports can be sent to one or multiple recipients via SMTP
+
+- **Fully containerized**  
+  Runs entirely in Docker with minimal setup
 
 ---
 
 ## Requirements
 
-- Docker & Docker Compose
-- PostgreSQL database
-- SMTP credentials for sending email reports
+- Docker Desktop
+
+Check installation:
+
+- docker --version
+- docker compose version
+
+- Docker installation guide: `https://docs.docker.com/get-docker/`
 
 ---
 
 ## Environment Variables
 
-Create a `.env` file in the project root with the following configuration:
+Rename `.env.example` to `.env` and adjust as needed:
 
-```env
-# Database
+```
+### Database
 POSTGRES_USER=admin
-POSTGRES_PASSWORD=YourStrongPassword
-POSTGRES_DB=networkdb
+POSTGRES_PASSWORD=admin
+POSTGRES_DB=db
 
-# Target hosts
-TARGETS_FILEPATH=targets.txt
-
-# Email reporting
-EMAIL_TO=recipient1@example.com,recipient2@example.com
-EMAIL_FROM=youremail@example.com
-EMAIL_PASS=your_email_app_password
+### Email reporting
+EMAIL_FROM=example@example.com
+EMAIL_PASS=examplepassword
 SMTP_SERVER=smtp.example.com
 SMTP_PORT=587
 
-# Automatic export interval (in hours)
-EXPORT_INTERVAL_HOURS=12
+### Automatic export interval (hours)
+EXPORT_INTERVAL_HOURS=24
 
-# Directory for CSV exports
+### Export directory
 EXPORT_DIR=/app/exports
 
-# Dashboard
-DASH_REFRESH_MS=10000
-MAX_POINTS=500
+### Dashboard
+DASH_REFRESH_MS=5000
+MAX_POINTS=250
 
-# Ping service
+### Ping service
 PING_INTERVAL=1
 PING_TIMEOUT=2
 ```
-
-## Target Configuration
-
-Targets are configured in the ```src/targets.txt``` file. Each target (IP or hostname) should be on a seperate line.
+---
 
 ## Running the Application
-Build and start the containers using Docker Compose:
-```bash
-docker-compose up --build
-```
-* Dashboard is available at: ```http://localhost:8050```
-* Adminer (PostgreSQL web client) is available at: ```http://localhost:8080```
 
-## Dashboard Features
-* Live latency graphs for all configured targets.
-* Timeout markers shown in red to identify connectivity issues.
+Build and start all services using Docker Compose:
+
+- docker compose up --build
+
+Or using the setup script:
+- Switch to the directory named of your OS and execute the start.bat or start.sh file
+- For linux and mac execute chmod +x setup.sh before starting the application
+
+---
+
+## Access
+
+- **Dashboard**  
+  http://localhost:8050
+
+- **Adminer (PostgreSQL Web UI)**  
+  http://localhost:8080
+
+---
+
+## Dashboard Overview
+
+- Live latency visualization
+- Latency distribution buckets
+- Packet loss percentage
+- Average and percentile latency
+- High-resolution latency-over-time graph
+
+---
 
 ## Automatic Reporting
-* The export service generates a CSV file and summary statistics every ```EXPORT_INTERVAL_HOURS```
-* Only new pings since the last export are included.
-* Emails include
-    * Average latency per target
-    * Maximum latency per target
-    * Total number of pings and timeouts
-    * Attached CSV file with detailed ping history
+
+- Reports are generated every `EXPORT_INTERVAL_HOURS`
+- Only new pings since the last export are included
+- Each report contains:
+  - Average latency per target
+  - Maximum latency per target
+  - Total number of pings
+  - Timeout / packet loss count
+  - Attached CSV with detailed ping history
+
+---
 
 ## License
-MIT License - free to use and modify
+
+MIT License – free to use and modify
