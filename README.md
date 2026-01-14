@@ -129,6 +129,12 @@ Or using the setup script:
 
 ---
 
+## Database Access
+
+- The database can be accessed with adminer via http://localhost:8080 as described above
+- With adminer, SQL statements can be executed or the whole accumulated data can be exported as a csv or sql file
+- The credentials for adminer can be defined in `.env.example`
+
 ## License
 
 MIT License – free to use and modify
