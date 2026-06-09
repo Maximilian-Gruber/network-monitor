@@ -160,5 +160,5 @@ cython_debug/
 
 exports/
 local_analysis/
-emails.txt
+email_recipients.txt
 targets.txt
